@@ -1676,18 +1676,34 @@ describe('probeCredentials', () => {
   });
 
   test('logs ERROR when provider times out', async () => {
-    // Use a 1ms timeout — even with valid env creds the provider chain check
-    // should time out before the synchronous env provider can run... but if it
-    // doesn't, we fall back to asserting the probe completed without throwing.
-    // Use a definitely-invalid profile to force a slow/failing lookup instead.
-    delete process.env.AWS_ACCESS_KEY_ID;
-    delete process.env.AWS_SECRET_ACCESS_KEY;
-    process.env.AWS_PROFILE = 'nonexistent-profile-for-testing';
+    // A provider that never settles. Using the real provider chain here leaves
+    // it running after the probe times out; it then lazy-loads the next
+    // credential provider after Jest has torn the environment down, which
+    // fails the run. It also made the outcome depend on the machine's
+    // ~/.aws config.
+    const hangingProvider = () => new Promise<never>(() => {});
 
-    await probeCredentials(1); // 1ms — will time out
+    await probeCredentials(1, hangingProvider);
 
     expect(stderrSpy).toHaveBeenCalledWith(
       expect.stringContaining('credential probe failed'),
     );
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('timed out after 1ms'));
+    expect(stderrSpy).not.toHaveBeenCalledWith(expect.stringContaining('credentials OK'));
+  });
+
+  test('logs ERROR with the provider error when the provider rejects', async () => {
+    const failingProvider = () =>
+      Promise.reject(new Error('Could not load credentials from any providers'));
+
+    await expect(probeCredentials(5000, failingProvider)).resolves.toBeUndefined();
+
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining('credential probe failed'),
+    );
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Could not load credentials from any providers'),
+    );
+    expect(stderrSpy).not.toHaveBeenCalledWith(expect.stringContaining('credentials OK'));
   });
 });
