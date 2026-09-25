@@ -194,8 +194,8 @@ export async function signWithTimeout(
 
 export async function probeCredentials(
   timeoutMs = 5_000,
+  provider: () => Promise<unknown> = fromNodeProviderChain(),
 ): Promise<void> {
-  const provider = fromNodeProviderChain();
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
